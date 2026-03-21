@@ -36,6 +36,19 @@ class NoteType(str, Enum):
     QUICK = "速记"
 
 
+class SubtaskStatus(str, Enum):
+    TODO = "todo"
+    DOING = "doing"
+    DONE = "done"
+
+
+class Subtask(BaseModel):
+    """A subtask embedded in a task page body as Markdown."""
+    name: str = Field(description="子目标名称")
+    status: SubtaskStatus = Field(default=SubtaskStatus.TODO, description="状态")
+    priority: TaskPriority = Field(default=TaskPriority.NORMAL, description="优先级")
+
+
 # ---------------------------------------------------------------------------
 # Task (工作流库)
 # ---------------------------------------------------------------------------
@@ -47,11 +60,12 @@ class Task(BaseModel):
     name: str = Field(description="任务名称")
     status: TaskStatus = Field(default=TaskStatus.TODO, description="任务状态")
     priority: Optional[TaskPriority] = Field(default=TaskPriority.NORMAL, description="优先级")
+    project: Optional[str] = Field(default=None, description="所属项目")
     due_date: Optional[str] = Field(default=None, description="截止日期 (ISO 8601 date string)")
     tags: list[str] = Field(default_factory=list, description="标签列表")
     note: Optional[str] = Field(default=None, description="备注")
-    linked_note_ids: list[str] = Field(default_factory=list, description="关联的笔记 page IDs")
     created_time: Optional[datetime] = Field(default=None, description="创建时间")
+    last_edited_time: Optional[datetime] = Field(default=None, description="最后编辑时间")
     url: Optional[str] = Field(default=None, description="Notion 页面 URL")
 
 
@@ -59,6 +73,7 @@ class TaskCreate(BaseModel):
     """Input model for creating a new task."""
 
     name: str = Field(description="任务名称")
+    project: Optional[str] = Field(default=None, description="所属项目")
     priority: TaskPriority = Field(default=TaskPriority.NORMAL)
     due_date: Optional[str] = Field(default=None, description="截止日期，格式：YYYY-MM-DD")
     tags: list[str] = Field(default_factory=list)
@@ -70,6 +85,7 @@ class TaskUpdate(BaseModel):
 
     status: Optional[TaskStatus] = None
     priority: Optional[TaskPriority] = None
+    project: Optional[str] = None
     due_date: Optional[str] = None
     tags: Optional[list[str]] = None
     note: Optional[str] = None
@@ -86,7 +102,6 @@ class Note(BaseModel):
     title: str = Field(description="笔记标题")
     type: Optional[NoteType] = Field(default=NoteType.QUICK, description="笔记类型")
     tags: list[str] = Field(default_factory=list, description="标签列表")
-    linked_task_ids: list[str] = Field(default_factory=list, description="关联的任务 page IDs")
     created_time: Optional[datetime] = Field(default=None, description="创建时间")
     url: Optional[str] = Field(default=None, description="Notion 页面 URL")
 
@@ -98,7 +113,6 @@ class NoteCreate(BaseModel):
     content: str = Field(description="笔记正文内容（Markdown）")
     type: NoteType = Field(default=NoteType.QUICK)
     tags: list[str] = Field(default_factory=list)
-    task_id: Optional[str] = Field(default=None, description="关联的任务 ID")
 
 
 # ---------------------------------------------------------------------------

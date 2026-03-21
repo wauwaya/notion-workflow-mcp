@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from notion.client import NotionClient
-from notion.models import Task, TaskCreate, TaskPriority, TaskStatus, TaskUpdate
+from notion.models import Task, TaskCreate, TaskPriority, TaskStatus, TaskUpdate, Subtask, SubtaskStatus
 
 _client: Optional[NotionClient] = None
 
@@ -29,6 +29,7 @@ def list_tasks(
     priority: Optional[str] = None,
     tag: Optional[str] = None,
     limit: int = 20,
+    project: Optional[str] = None,
 ) -> list[dict]:
     """
     列出工作流库中的任务。
@@ -38,6 +39,7 @@ def list_tasks(
         priority: 按优先级过滤，可选值：🔴 紧急 | 🟡 高 | 🟢 普通
         tag:      按标签过滤，精确匹配单个标签名称
         limit:    返回条数，默认 20，最大 100
+        project:  按项目过滤，精确匹配项目名称
 
     Returns:
         任务列表（字典格式）
@@ -48,6 +50,7 @@ def list_tasks(
         priority=TaskPriority(priority) if priority else None,
         tag=tag,
         limit=limit,
+        project=project,
     )
     return [t.model_dump() for t in tasks]
 
@@ -75,6 +78,7 @@ def get_task(task_id: str) -> dict:
 
 def create_task(
     name: str,
+    project: Optional[str] = None,
     priority: str = "🟢 普通",
     due_date: Optional[str] = None,
     tags: Optional[list[str]] = None,
@@ -85,6 +89,7 @@ def create_task(
 
     Args:
         name:     任务名称（必填）
+        project:  所属项目名称，可选
         priority: 优先级，可选：🔴 紧急 | 🟡 高 | 🟢 普通，默认 🟢 普通
         due_date: 截止日期，格式 YYYY-MM-DD，可选
         tags:     标签列表，如 ["开发", "前端"]，可选
@@ -95,6 +100,7 @@ def create_task(
     """
     data = TaskCreate(
         name=name,
+        project=project,
         priority=TaskPriority(priority),
         due_date=due_date,
         tags=tags or [],
@@ -114,6 +120,7 @@ def update_task(
     due_date: Optional[str] = None,
     tags: Optional[list[str]] = None,
     note: Optional[str] = None,
+    project: Optional[str] = None,
 ) -> dict:
     """
     更新一个已有任务的属性（只传需要修改的字段）。
@@ -125,6 +132,7 @@ def update_task(
         due_date: 新截止日期，格式 YYYY-MM-DD
         tags:     新标签列表（会完整替换原有标签）
         note:     新备注（会替换原有备注）
+        project:  所属项目名称
 
     Returns:
         更新后的任务详情
@@ -135,6 +143,7 @@ def update_task(
         due_date=due_date,
         tags=tags,
         note=note,
+        project=project,
     )
     return get_client().update_task(task_id, data).model_dump()
 
@@ -197,6 +206,26 @@ def complete_task(task_id: str, summary: Optional[str] = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# append_task
+# ---------------------------------------------------------------------------
+
+def append_task(task_id: str, content: str) -> dict:
+    """
+    向已有任务追加内容（追加到页面 body 末尾）。
+
+    Args:
+        task_id: 任务的 Notion 页面 ID
+        content: 要追加的文本内容
+
+    Returns:
+        更新后的任务元信息（不含完整 body）
+    """
+    client = get_client()
+    client.append_task_body(task_id, content)
+    return client.get_task(task_id).model_dump()
+
+
+# ---------------------------------------------------------------------------
 # search_tasks
 # ---------------------------------------------------------------------------
 
@@ -211,3 +240,50 @@ def search_tasks(query: str) -> list[dict]:
         匹配的任务列表
     """
     return [t.model_dump() for t in get_client().search_tasks(query)]
+
+
+# ---------------------------------------------------------------------------
+# get_subtasks
+# ---------------------------------------------------------------------------
+
+def get_subtasks(task_id: str) -> list[dict]:
+    """
+    获取任务的子目标列表（解析任务页面 body 中的子目标 Markdown）。
+
+    Args:
+        task_id: 任务的 Notion 页面 ID
+
+    Returns:
+        子目标列表 [{name, status, priority}]，status: todo | doing | done
+    """
+    subtasks = get_client().get_subtasks(task_id)
+    return [s.model_dump() for s in subtasks]
+
+
+# ---------------------------------------------------------------------------
+# update_subtasks
+# ---------------------------------------------------------------------------
+
+def update_subtasks(task_id: str, subtasks: list[dict]) -> list[dict]:
+    """
+    更新任务的子目标列表（重写页面 body 中的子目标区块）。
+
+    Args:
+        task_id:  任务的 Notion 页面 ID
+        subtasks: 完整子目标列表 [{name: str, status: str, priority: str}]
+                  status: todo | doing | done
+                  priority: 🔴 紧急 | 🟡 高 | 🟢 普通
+
+    Returns:
+        更新后的子目标列表
+    """
+    parsed = [
+        Subtask(
+            name=s["name"],
+            status=SubtaskStatus(s["status"]),
+            priority=TaskPriority(s.get("priority", "🟢 普通")),
+        )
+        for s in subtasks
+    ]
+    result = get_client().update_subtasks(task_id, parsed)
+    return [s.model_dump() for s in result]

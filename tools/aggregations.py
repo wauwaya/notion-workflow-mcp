@@ -57,17 +57,17 @@ def generate_standup() -> dict:
     # Yesterday's completed tasks
     done_tasks = client.list_tasks(status=TaskStatus.DONE, limit=50)
     yesterday_done = [
-        t.name for t in done_tasks
+        f"[{t.project or '无项目'}] {t.name}" for t in done_tasks
         if t.created_time and t.created_time.date().isoformat() >= yesterday
     ]
 
     # Today's plan: in-progress + due today
     today_tasks = client.get_today_tasks()
-    today_plan = [t.name for t in today_tasks]
+    today_plan = [f"[{t.project or '无项目'}] {t.name}" for t in today_tasks]
 
     # Blockers: on-hold tasks
     on_hold = client.list_tasks(status=TaskStatus.ON_HOLD, limit=20)
-    blockers = [t.name for t in on_hold]
+    blockers = [f"[{t.project or '无项目'}] {t.name}" for t in on_hold]
 
     report = StandupReport(
         yesterday_done=yesterday_done,
@@ -123,7 +123,7 @@ def generate_weekly_review(week_offset: int = 0) -> dict:
     ]
     if weekly_done:
         summary_lines.append("\n完成项目：")
-        summary_lines.extend(f"  • {t.name}" for t in weekly_done)
+        summary_lines.extend(f"  • [{t.project or '无项目'}] {t.name}" for t in weekly_done)
 
     review = WeeklyReview(
         week_label=week_label,

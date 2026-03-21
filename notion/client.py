@@ -12,6 +12,7 @@ notion-client 3.0 changes:
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -22,6 +23,8 @@ from notion.models import (
     Note,
     NoteCreate,
     NoteType,
+    Subtask,
+    SubtaskStatus,
     Task,
     TaskCreate,
     TaskOverview,
@@ -50,6 +53,13 @@ class NotionClient:
                 "WORKFLOW_DATABASE_ID and NOTES_DATABASE_ID must be set in .env"
             )
 
+    # Subtask Markdown format regex (class-level constants)
+    _SUBTASK_RE = re.compile(
+        r'^- \[( |~|x)\] (.+?)(?:\s*\((🔴 紧急|🟡 高|🟢 普通)\))?\s*$'
+    )
+    _SUBTASK_STATUS_MAP = {" ": SubtaskStatus.TODO, "~": SubtaskStatus.DOING, "x": SubtaskStatus.DONE}
+    _SUBTASK_STATUS_CHAR = {SubtaskStatus.TODO: " ", SubtaskStatus.DOING: "~", SubtaskStatus.DONE: "x"}
+
     # ------------------------------------------------------------------
     # Internal helpers: Notion response → domain model
     # ------------------------------------------------------------------
@@ -77,22 +87,26 @@ class NotionClient:
             items = props.get("名称", {}).get("title", [])
             return "".join(i["plain_text"] for i in items)
 
-        def _relations(key: str) -> list[str]:
-            return [r["id"] for r in props.get(key, {}).get("relation", [])]
-
         status_raw = _select("状态")
         priority_raw = _select("优先级")
+
+        last_edited_raw = page.get("last_edited_time")
+        last_edited_time = (
+            datetime.fromisoformat(last_edited_raw.replace("Z", "+00:00"))
+            if last_edited_raw else None
+        )
 
         return Task(
             id=page["id"],
             name=_title(),
             status=TaskStatus(status_raw) if status_raw else TaskStatus.TODO,
             priority=TaskPriority(priority_raw) if priority_raw else TaskPriority.NORMAL,
+            project=_select("项目"),
             due_date=_date("截止日期"),
             tags=_multi_select("标签"),
             note=_rich_text("备注"),
-            linked_note_ids=_relations("关联笔记"),
             created_time=datetime.fromisoformat(page["created_time"].replace("Z", "+00:00")),
+            last_edited_time=last_edited_time,
             url=page.get("url"),
         )
 
@@ -111,9 +125,6 @@ class NotionClient:
             items = props.get("名称", {}).get("title", [])
             return "".join(i["plain_text"] for i in items)
 
-        def _relations(key: str) -> list[str]:
-            return [r["id"] for r in props.get(key, {}).get("relation", [])]
-
         type_raw = _select("类型")
 
         return Note(
@@ -121,7 +132,6 @@ class NotionClient:
             title=_title(),
             type=NoteType(type_raw) if type_raw else NoteType.QUICK,
             tags=_multi_select("标签"),
-            linked_task_ids=_relations("关联任务"),
             created_time=datetime.fromisoformat(page["created_time"].replace("Z", "+00:00")),
             url=page.get("url"),
         )
@@ -135,6 +145,7 @@ class NotionClient:
         name: Optional[str] = None,
         status: Optional[TaskStatus] = None,
         priority: Optional[TaskPriority] = None,
+        project: Optional[str] = None,
         due_date: Optional[str] = None,
         tags: Optional[list[str]] = None,
         note: Optional[str] = None,
@@ -147,6 +158,8 @@ class NotionClient:
             props["状态"] = {"select": {"name": status.value}}
         if priority is not None:
             props["优先级"] = {"select": {"name": priority.value}}
+        if project is not None:
+            props["项目"] = {"select": {"name": project}}
         if due_date is not None:
             props["截止日期"] = {"date": {"start": due_date}}
         if tags is not None:
@@ -192,6 +205,7 @@ class NotionClient:
         status: Optional[TaskStatus] = None,
         priority: Optional[TaskPriority] = None,
         tag: Optional[str] = None,
+        project: Optional[str] = None,
         limit: int = 20,
     ) -> list[Task]:
         filters: list[dict] = []
@@ -210,6 +224,11 @@ class NotionClient:
             filters.append({
                 "property": "标签",
                 "multi_select": {"contains": tag},
+            })
+        if project:
+            filters.append({
+                "property": "项目",
+                "select": {"equals": project},
             })
 
         query_params: dict[str, Any] = {
@@ -237,6 +256,7 @@ class NotionClient:
             name=data.name,
             status=TaskStatus.TODO,
             priority=data.priority,
+            project=data.project,
             due_date=data.due_date,
             tags=data.tags,
             note=data.note,
@@ -251,6 +271,7 @@ class NotionClient:
         props = self._task_properties(
             status=data.status,
             priority=data.priority,
+            project=data.project,
             due_date=data.due_date,
             tags=data.tags,
             note=data.note,
@@ -264,6 +285,107 @@ class NotionClient:
             block_id=task_id,
             children=[self._text_block(content)],
         )
+
+    def _find_subtask_section(self, blocks: list[dict]) -> tuple[int | None, int | None]:
+        """Find the ## 子目标 section boundaries in a list of blocks.
+
+        Returns:
+            (start_idx, end_idx) — start is the heading_2 block index,
+            end is the next heading_2 index (exclusive) or None if section
+            extends to the end of blocks. Both None if section not found.
+        """
+        start: int | None = None
+        end: int | None = None
+        for i, block in enumerate(blocks):
+            if block.get("type") == "heading_2":
+                text = "".join(
+                    t["plain_text"]
+                    for t in block.get("heading_2", {}).get("rich_text", [])
+                )
+                if text.strip() == "子目标":
+                    start = i
+                elif start is not None and end is None:
+                    end = i
+                    break
+        return start, end
+
+    def get_subtasks(self, task_id: str) -> list[Subtask]:
+        """Parse subtasks from the ## 子目标 section in a task page body."""
+        blocks = self._get_all_child_blocks(task_id)
+        start, end = self._find_subtask_section(blocks)
+        if start is None:
+            return []
+
+        section = blocks[start + 1 : end]  # skip heading itself
+        subtasks: list[Subtask] = []
+        for block in section:
+            if block.get("type") != "paragraph":
+                continue
+            rich_text = block.get("paragraph", {}).get("rich_text", [])
+            text = "".join(t["plain_text"] for t in rich_text)
+            m = self._SUBTASK_RE.match(text)
+            if m:
+                status_char, name, priority_str = m.group(1), m.group(2), m.group(3)
+                status = self._SUBTASK_STATUS_MAP.get(status_char, SubtaskStatus.TODO)
+                priority = TaskPriority(priority_str) if priority_str else TaskPriority.NORMAL
+                subtasks.append(Subtask(name=name, status=status, priority=priority))
+        return subtasks
+
+    def update_subtasks(self, task_id: str, subtasks: list[Subtask]) -> list[Subtask]:
+        """Rewrite the ## 子目标 section in the task page body."""
+        blocks = self._get_all_child_blocks(task_id)
+        start, end = self._find_subtask_section(blocks)
+
+        # Delete old section blocks (heading + content within boundaries)
+        if start is not None:
+            section_end = end if end is not None else len(blocks)
+            for block in blocks[start:section_end]:
+                self.client.blocks.delete(block_id=block["id"])
+
+        # Build new blocks: heading + subtask lines
+        new_children: list[dict] = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "子目标"}}]
+                },
+            },
+        ]
+        for st in subtasks:
+            status_char = self._SUBTASK_STATUS_CHAR[st.status]
+            line = f"- [{status_char}] {st.name} ({st.priority.value})"
+            new_children.append(self._text_block(line))
+
+        # Insert at the old position, or append if first time
+        if start is not None and start > 0:
+            before_block_id = blocks[start - 1]["id"]
+            self.client.blocks.children.append(
+                block_id=task_id,
+                children=new_children,
+                after=before_block_id,
+            )
+        else:
+            self.client.blocks.children.append(
+                block_id=task_id,
+                children=new_children,
+            )
+
+        return subtasks
+
+    def _get_all_child_blocks(self, block_id: str) -> list[dict]:
+        """Retrieve all child blocks of a page/block, handling pagination."""
+        results: list[dict] = []
+        resp = self.client.blocks.children.list(block_id=block_id, page_size=100)
+        results.extend(resp["results"])
+        while resp.get("has_more"):
+            resp = self.client.blocks.children.list(
+                block_id=block_id,
+                page_size=100,
+                start_cursor=resp["next_cursor"],
+            )
+            results.extend(resp["results"])
+        return results
 
     def search_tasks(self, query: str) -> list[Task]:
         response = self.client.search(
@@ -397,12 +519,7 @@ class NotionClient:
             properties=props,
             children=children,
         )
-        note = self._parse_note(page)
-
-        if data.task_id:
-            self.link_note_to_task(note.id, data.task_id)
-
-        return note
+        return self._parse_note(page)
 
     def append_note_content(self, note_id: str, content: str) -> None:
         """Append a paragraph block to a note page body."""
@@ -425,45 +542,4 @@ class NotionClient:
             ).replace("-", "")
             if parent_id == self.notes_db_id.replace("-", ""):
                 notes.append(self._parse_note(page))
-        return notes
-
-    # ------------------------------------------------------------------
-    # Relations
-    # ------------------------------------------------------------------
-
-    def link_note_to_task(self, note_id: str, task_id: str) -> None:
-        """Create a bidirectional relation between a note and a task."""
-        note = self.get_note(note_id)
-        existing_task_ids = note.linked_task_ids
-        if task_id not in existing_task_ids:
-            self.client.pages.update(
-                page_id=note_id,
-                properties={
-                    "关联任务": {
-                        "relation": [{"id": t} for t in existing_task_ids + [task_id]]
-                    }
-                },
-            )
-
-        task = self.get_task(task_id)
-        existing_note_ids = task.linked_note_ids
-        if note_id not in existing_note_ids:
-            self.client.pages.update(
-                page_id=task_id,
-                properties={
-                    "关联笔记": {
-                        "relation": [{"id": n} for n in existing_note_ids + [note_id]]
-                    }
-                },
-            )
-
-    def get_task_notes(self, task_id: str) -> list[Note]:
-        """Retrieve all notes linked to a task."""
-        task = self.get_task(task_id)
-        notes = []
-        for note_id in task.linked_note_ids:
-            try:
-                notes.append(self.get_note(note_id))
-            except Exception:
-                pass
         return notes

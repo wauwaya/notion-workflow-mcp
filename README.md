@@ -6,7 +6,7 @@ Inspired by [google-keep-mcp](https://github.com/staryxchen/google-keep-mcp) —
 
 ## Features
 
-- **18 MCP tools** covering task lifecycle, note-taking, subtask management, and aggregations
+- **19 MCP tools** covering task lifecycle, note-taking, subtask management, and aggregations
 - **2 independent Notion databases**: 工作流库 (tasks, with project & subtasks) + 笔记库 (notes)
 - **8 slash commands**: `/capture`, `/subtask`, `/task_list`, `/status`, `/progress`, `/note`, `/daily`, `/weekly`
 - **Project-based task management**: tasks belong to projects, with embedded subtasks (priority + status)
@@ -72,6 +72,35 @@ Or add manually to `~/.claude/settings.json`:
 ```
 
 Restart Claude CLI — the MCP server loads automatically.
+
+### 6. Install slash command skills
+
+Slash commands (like `/capture`, `/note`, `/daily`) are Claude Code skills defined in `.claude/commands/`. They need to be accessible from your working directory.
+
+**Option A: Work inside this project directory**
+
+If you run `claude` from the `notion-workflow-mcp/` directory, skills are automatically available — Claude Code reads `.claude/commands/` from the current directory.
+
+**Option B: Make skills globally available**
+
+To use the slash commands from **any directory**, copy them to your global Claude Code commands folder:
+
+```bash
+# Create global commands dir if it doesn't exist
+mkdir -p ~/.claude/commands
+
+# Copy all skills
+cp notion-workflow-mcp/.claude/commands/*.md ~/.claude/commands/
+```
+
+**Option C: Symlink (auto-sync with updates)**
+
+```bash
+mkdir -p ~/.claude/commands
+ln -sf $(pwd)/notion-workflow-mcp/.claude/commands/*.md ~/.claude/commands/
+```
+
+After installation, restart Claude CLI. Verify by typing `/capture` — it should be recognized as a slash command.
 
 ## Workflow
 

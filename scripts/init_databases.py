@@ -46,6 +46,11 @@ WORKFLOW_SCHEMA: dict[str, dict] = {
     "截止日期": {"date": {}},
     "标签": {"multi_select": {"options": []}},
     "备注": {"rich_text": {}},
+    "项目": {
+        "select": {
+            "options": []
+        }
+    },
 }
 
 NOTES_SCHEMA: dict[str, dict] = {
@@ -74,30 +79,6 @@ def add_property(client: Client, ds_id: str, name: str, prop_config: dict) -> No
         properties={name: prop_config},
     )
     print(f"  ✅ 添加字段：{name}")
-
-
-def setup_relation(
-    client: Client,
-    source_ds_id: str,
-    source_prop_name: str,
-    target_ds_id: str,
-    synced_prop_name: str,
-) -> None:
-    client.data_sources.update(
-        data_source_id=source_ds_id,
-        properties={
-            source_prop_name: {
-                "relation": {
-                    "database_id": target_ds_id,
-                    "type": "dual_property",
-                    "dual_property": {
-                        "synced_property_name": synced_prop_name,
-                    },
-                }
-            }
-        },
-    )
-    print(f"  ✅ 建立关联：{source_prop_name} ↔ {synced_prop_name}")
 
 
 def init_database(client: Client, ds_id: str, schema: dict, db_label: str) -> None:
@@ -132,26 +113,6 @@ def main() -> None:
 
     init_database(client, workflow_db_id, WORKFLOW_SCHEMA, "工作流库")
     init_database(client, notes_db_id, NOTES_SCHEMA, "笔记库")
-
-    # Try to set up relations
-    print("\n🔗 尝试建立双向关联...")
-    try:
-        workflow_props = get_existing_properties(client, workflow_db_id)
-        if "关联笔记" not in workflow_props:
-            setup_relation(
-                client,
-                source_ds_id=workflow_db_id,
-                source_prop_name="关联笔记",
-                target_ds_id=notes_db_id,
-                synced_prop_name="关联任务",
-            )
-        else:
-            print("  ⏭  关联已存在：关联笔记 ↔ 关联任务")
-    except Exception as e:
-        print(f"  ⚠️  自动建立关联失败：{e}")
-        print("  👉 请手动在 Notion 中：")
-        print("     工作流库 → 添加属性 → Relation → 选择笔记库")
-        print("     开启双向同步，命名为 [关联任务]")
 
     print("\n✨ 初始化完成！")
     print("\n📌 下一步：重启 Claude CLI，MCP Server 即可使用")

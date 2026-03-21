@@ -80,7 +80,6 @@ def create_note(
     content: str,
     note_type: str = "速记",
     tags: Optional[list[str]] = None,
-    task_id: Optional[str] = None,
 ) -> dict:
     """
     在笔记库中创建一篇新笔记。
@@ -90,7 +89,6 @@ def create_note(
         content:   笔记正文（必填，支持纯文本/Markdown）
         note_type: 笔记类型，可选：会议记录 | 想法 | 参考 | 速记，默认速记
         tags:      标签列表，如 ["前端", "架构"]，可选
-        task_id:   关联的任务 ID，创建后自动建立双向关联，可选
 
     Returns:
         创建成功的笔记详情
@@ -100,7 +98,6 @@ def create_note(
         content=content,
         type=NoteType(note_type),
         tags=tags or [],
-        task_id=task_id,
     )
     return get_client().create_note(data).model_dump()
 
