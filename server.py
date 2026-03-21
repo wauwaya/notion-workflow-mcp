@@ -19,6 +19,7 @@ from tools.workflow import (
     list_tasks,
     search_tasks,
     start_task,
+    update_subtask_detail,
     update_subtasks,
     update_task,
 )
@@ -43,6 +44,7 @@ mcp.tool(append_task)
 mcp.tool(search_tasks)
 mcp.tool(get_subtasks)
 mcp.tool(update_subtasks)
+mcp.tool(update_subtask_detail)
 
 # Notes tools
 mcp.tool(list_notes)

@@ -270,9 +270,10 @@ def update_subtasks(task_id: str, subtasks: list[dict]) -> list[dict]:
 
     Args:
         task_id:  任务的 Notion 页面 ID
-        subtasks: 完整子目标列表 [{name: str, status: str, priority: str}]
+        subtasks: 完整子目标列表 [{name: str, status: str, priority: str, detail: str}]
                   status: todo | doing | done
                   priority: 🔴 紧急 | 🟡 高 | 🟢 普通
+                  detail: 可选，子目标详情文本
 
     Returns:
         更新后的子目标列表
@@ -282,8 +283,29 @@ def update_subtasks(task_id: str, subtasks: list[dict]) -> list[dict]:
             name=s["name"],
             status=SubtaskStatus(s["status"]),
             priority=TaskPriority(s.get("priority", "🟢 普通")),
+            detail=s.get("detail", ""),
         )
         for s in subtasks
     ]
     result = get_client().update_subtasks(task_id, parsed)
     return [s.model_dump() for s in result]
+
+
+# ---------------------------------------------------------------------------
+# update_subtask_detail
+# ---------------------------------------------------------------------------
+
+def update_subtask_detail(task_id: str, subtask_name: str, detail: str) -> dict:
+    """
+    更新某个子目标的详情（heading_3 + paragraph 区块）。
+
+    Args:
+        task_id:      任务的 Notion 页面 ID
+        subtask_name: 子目标名称（精确匹配）
+        detail:       详情文本内容
+
+    Returns:
+        更新结果确认
+    """
+    get_client().update_subtask_detail(task_id, subtask_name, detail)
+    return {"status": "ok", "subtask_name": subtask_name, "detail_length": len(detail)}

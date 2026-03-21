@@ -42,11 +42,20 @@ class SubtaskStatus(str, Enum):
     DONE = "done"
 
 
+SUBTASK_STATUS_DISPLAY = {
+    SubtaskStatus.TODO: "⬜ 待办",
+    SubtaskStatus.DOING: "🔄 进行中",
+    SubtaskStatus.DONE: "✅ 完成",
+}
+SUBTASK_DISPLAY_TO_STATUS = {v: k for k, v in SUBTASK_STATUS_DISPLAY.items()}
+
+
 class Subtask(BaseModel):
-    """A subtask embedded in a task page body as Markdown."""
+    """A subtask embedded in a task page body as table + detail sections."""
     name: str = Field(description="子目标名称")
     status: SubtaskStatus = Field(default=SubtaskStatus.TODO, description="状态")
     priority: TaskPriority = Field(default=TaskPriority.NORMAL, description="优先级")
+    detail: str = Field(default="", description="子目标详情")
 
 
 # ---------------------------------------------------------------------------
