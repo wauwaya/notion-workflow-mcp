@@ -2,13 +2,15 @@
 
 Personal workflow management via **Claude CLI + Notion API**, built as an MCP Server.
 
-Inspired by [google-keep-mcp](https://github.com/staryxchen/google-keep-mcp) — turns Notion into a note-free personal task and knowledge system driven by slash commands.
+Inspired by [google-keep-mcp](https://github.com/staryxchen/google-keep-mcp) — turns Notion into a personal task and knowledge system driven by slash commands.
 
 ## Features
 
-- **18 MCP tools** covering task lifecycle, note-taking, relations, and aggregations
-- **2 Notion databases**: 工作流库 (tasks) + 笔记库 (notes), bidirectionally linked
-- **9 slash commands**: `/capture`, `/today`, `/start`, `/done`, `/note`, `/standup`, `/review`, `/find`, `/overview`
+- **18 MCP tools** covering task lifecycle, note-taking, subtask management, and aggregations
+- **2 independent Notion databases**: 工作流库 (tasks, with project & subtasks) + 笔记库 (notes)
+- **8 slash commands**: `/capture`, `/subtask`, `/task_list`, `/status`, `/progress`, `/note`, `/daily`, `/weekly`
+- **Project-based task management**: tasks belong to projects, with embedded subtasks (priority + status)
+- **Conversation-to-note**: `/note` auto-summarizes AI conversations into structured notes
 
 ## Requirements
 
@@ -48,7 +50,7 @@ In Notion: open each database → `...` → `Connections` → select your integr
 python scripts/init_databases.py
 ```
 
-This auto-adds all required properties (状态, 优先级, 截止日期, 标签, 备注, 关联笔记/任务) to your existing databases.
+This auto-adds all required properties (状态, 优先级, 项目, 截止日期, 标签, 备注) to your existing databases.
 
 ### 5. Register MCP Server with Claude CLI
 
@@ -71,38 +73,81 @@ Or add manually to `~/.claude/settings.json`:
 
 Restart Claude CLI — the MCP server loads automatically.
 
+## Workflow
+
+```
+# 1. Create a task under a project
+/capture 重构Notion MCP -p MCP改造 -d 2026-03-28
+
+# 2. Add subtasks
+/subtask abc123 去掉关联功能 -pri 高
+/subtask abc123 增加项目字段 -pri 紧急
+/subtask abc123 创建skill
+
+# 3. View all incomplete tasks
+/task_list
+
+# 4. Start working on a subtask
+/status abc123 doing 去掉关联功能
+
+# 5. Ask AI a question, then save the answer as a note
+> Go 的 context 包怎么用？
+> [AI explains...]
+/note
+
+# 6. Mark subtask done
+/status abc123 done 去掉关联功能
+
+# 7. Update progress
+/progress abc123
+
+# 8. End of day summary
+/daily
+
+# 9. Friday weekly report
+/weekly
+```
+
 ## MCP Tools
 
 | Group | Tools |
 |---|---|
-| Workflow | `list_tasks` `get_task` `create_task` `update_task` `start_task` `complete_task` `search_tasks` |
+| Workflow | `list_tasks` `get_task` `create_task` `update_task` `start_task` `complete_task` `append_task` `search_tasks` |
+| Subtasks | `get_subtasks` `update_subtasks` |
 | Notes | `list_notes` `get_note` `create_note` `append_note` `search_notes` |
-| Relations | `link_note_to_task` `get_task_notes` |
 | Aggregations | `get_overview` `get_today_tasks` `generate_standup` `generate_weekly_review` |
 
 ## Slash Commands
 
 | Command | Description |
 |---|---|
-| `/capture <task>` | Quick-capture a new task |
-| `/today` | Today's due + in-progress tasks |
-| `/start <task>` | Move task to in-progress |
-| `/done <task> [summary]` | Complete a task with optional summary |
-| `/note <content>` | Create a quick note |
-| `/standup` | Generate daily standup report |
-| `/review` | Weekly review |
-| `/find <keyword>` | Search across tasks and notes |
-| `/overview` | Task status dashboard |
+| `/capture <task> [-p project] [-pri priority] [-d date]` | Quick-create a task |
+| `/subtask <task_id> <name> [-pri priority]` | Add a subtask to a task |
+| `/task_list [-p project] [-s status]` | View incomplete tasks grouped by project |
+| `/status <task_id> <doing\|done> <subtask>` | Change subtask status |
+| `/progress <task_id>` | Summarize & save progress to Notion |
+| `/note` | Summarize current conversation into a note |
+| `/daily` | Today's progress report (by project) |
+| `/weekly` | This week's progress report (by project) |
 
 ## Database Schema
 
 **工作流库 (Tasks)**
-`名称` · `状态` · `优先级` · `截止日期` · `标签` · `备注` · `关联笔记`
+`名称` · `状态` · `优先级` · `项目` · `截止日期` · `标签` · `备注`
+
+Subtasks are embedded in the task page body as structured Markdown:
+```markdown
+## 子目标
+- [ ] 待办子目标 (🟢 普通)
+- [~] 进行中子目标 (🟡 高)
+- [x] 已完成子目标 (🔴 紧急)
+```
 
 **笔记库 (Notes)**
-`名称` · `类型` · `标签` · `关联任务`
+`名称` · `类型` · `标签`
 
 ## Notes
 
 - Built against **notion-client 3.0** (`data_sources.*` API)
-- Notion database IDs in 3.0 differ from URL IDs — use `init_databases.py` to auto-discover correct IDs
+- Two databases are **independent** — no bidirectional relation between tasks and notes
+- Subtasks use three states: `[ ]` todo, `[~]` doing, `[x]` done
