@@ -6,9 +6,9 @@ Inspired by [google-keep-mcp](https://github.com/staryxchen/google-keep-mcp) —
 
 ## Features
 
-- **19 MCP tools** covering task lifecycle, note-taking, subtask management, and aggregations
+- **20 MCP tools** covering task lifecycle, note-taking, subtask management, and aggregations
 - **2 independent Notion databases**: 工作流库 (tasks, with project & subtasks) + 笔记库 (notes)
-- **8 slash commands**: `/capture`, `/subtask`, `/task_list`, `/status`, `/progress`, `/note`, `/daily`, `/weekly`
+- **12 slash commands**: `/capture`, `/subtask`, `/task_list`, `/status`, `/progress`, `/note`, `/review`, `/standup`, `/overview`, `/detail`, `/done`, `/find`
 - **Project-based task management**: tasks belong to projects, with embedded subtasks (priority + status)
 - **Conversation-to-note**: `/note` auto-summarizes AI conversations into structured notes
 
@@ -75,7 +75,7 @@ Restart Claude CLI — the MCP server loads automatically.
 
 ### 6. Install slash command skills
 
-Slash commands (like `/capture`, `/note`, `/daily`) are Claude Code skills defined in `.claude/commands/`. They need to be accessible from your working directory.
+Slash commands (like `/capture`, `/note`, `/review`) are Claude Code skills defined in `.claude/commands/`. They need to be accessible from your working directory.
 
 **Option A: Work inside this project directory**
 
@@ -130,11 +130,11 @@ After installation, restart Claude CLI. Verify by typing `/capture` — it shoul
 # 7. Update progress
 /progress abc123
 
-# 8. End of day summary
-/daily
+# 8. End of day review
+/review today
 
 # 9. Friday weekly report
-/weekly
+/review this week
 ```
 
 ## MCP Tools
@@ -142,9 +142,9 @@ After installation, restart Claude CLI. Verify by typing `/capture` — it shoul
 | Group | Tools |
 |---|---|
 | Workflow | `list_tasks` `get_task` `create_task` `update_task` `start_task` `complete_task` `append_task` `search_tasks` |
-| Subtasks | `get_subtasks` `update_subtasks` |
+| Subtasks | `get_subtasks` `update_subtasks` `update_subtask_detail` |
 | Notes | `list_notes` `get_note` `create_note` `append_note` `search_notes` |
-| Aggregations | `get_overview` `get_today_tasks` `generate_standup` `generate_weekly_review` |
+| Aggregations | `get_overview` `get_today_tasks` `generate_standup` `generate_review` |
 
 ## Slash Commands
 
@@ -153,11 +153,15 @@ After installation, restart Claude CLI. Verify by typing `/capture` — it shoul
 | `/capture <task> [-p project] [-pri priority] [-d date]` | Quick-create a task |
 | `/subtask <task_id> <name> [-pri priority]` | Add a subtask to a task |
 | `/task_list [-p project] [-s status]` | View incomplete tasks grouped by project |
-| `/status <task_id> <doing\|done> <subtask>` | Change subtask status |
+| `/status <task_id> <状态> [子目标名]` | Change task or subtask status |
 | `/progress <task_id>` | Summarize & save progress to Notion |
 | `/note` | Summarize current conversation into a note |
-| `/daily` | Today's progress report (by project) |
-| `/weekly` | This week's progress report (by project) |
+| `/review [时间范围]` | Review report (today/yesterday/this week/last week/date range) |
+| `/standup` | Daily standup (yesterday done / today plan / blockers) |
+| `/overview` | Task status dashboard |
+| `/detail <task_id> <子目标名>` | Update subtask detail description |
+| `/done <task_id>` | Mark a task as completed |
+| `/find <keyword>` | Search tasks and notes |
 
 ## Database Schema
 

@@ -147,10 +147,11 @@ class StandupReport(BaseModel):
     generated_at: datetime = Field(default_factory=datetime.now)
 
 
-class WeeklyReview(BaseModel):
-    """Weekly review report."""
+class ReviewReport(BaseModel):
+    """Flexible date-range review report."""
 
-    week_label: str = Field(description="e.g. '2026-W12'")
+    start_date: str = Field(description="开始日期 YYYY-MM-DD")
+    end_date: str = Field(description="结束日期 YYYY-MM-DD")
     completed_tasks: list[Task] = Field(default_factory=list)
     in_progress_tasks: list[Task] = Field(default_factory=list)
     notes_created: int = 0

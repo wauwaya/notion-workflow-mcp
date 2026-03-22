@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from notion.client import NotionClient
-from notion.models import StandupReport, TaskStatus, WeeklyReview
+from notion.models import ReviewReport, StandupReport, TaskStatus
 
 _client: Optional[NotionClient] = None
 
@@ -50,15 +50,13 @@ def generate_standup() -> dict:
     """
     client = get_client()
     now = datetime.now(timezone.utc)
-    yesterday = (now - timedelta(days=1)).date().isoformat()
-    today = now.date().isoformat()
-    tomorrow = (now + timedelta(days=1)).date().isoformat()
+    yesterday = (now - timedelta(days=1)).date()
 
-    # Yesterday's completed tasks
+    # Yesterday's completed tasks (use last_edited_time as approximate completion time)
     done_tasks = client.list_tasks(status=TaskStatus.DONE, limit=50)
     yesterday_done = [
         f"[{t.project or '无项目'}] {t.name}" for t in done_tasks
-        if t.created_time and t.created_time.date().isoformat() >= yesterday
+        if t.last_edited_time and t.last_edited_time.date() == yesterday
     ]
 
     # Today's plan: in-progress + due today
@@ -77,59 +75,68 @@ def generate_standup() -> dict:
     return report.model_dump()
 
 
-def generate_weekly_review(week_offset: int = 0) -> dict:
+def generate_review(start_date: str, end_date: str) -> dict:
     """
-    生成工作周报/复盘，默认为本周，week_offset=-1 为上周。
+    生成指定日期范围的工作复盘报告。
 
     Args:
-        week_offset: 0 = 本周，-1 = 上周，以此类推
+        start_date: 开始日期，格式 YYYY-MM-DD
+        end_date: 结束日期，格式 YYYY-MM-DD（包含当天）
 
     Returns:
-        WeeklyReview 字典，包含完成任务、进行中任务、创建笔记数和总结
+        ReviewReport 字典，包含完成任务、进行中任务、笔记数和总结
     """
+    start_d = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_d = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+    if end_d < start_d:
+        raise ValueError("结束日期不能早于开始日期")
+    if (end_d - start_d).days > 30:
+        raise ValueError("日期范围不能超过 31 天")
+
+    start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    end = datetime.strptime(end_date, "%Y-%m-%d").replace(
+        hour=23, minute=59, second=59, tzinfo=timezone.utc
+    )
+
     client = get_client()
-    now = datetime.now(timezone.utc)
 
-    # Calculate week boundaries (Monday to Sunday)
-    monday = now - timedelta(days=now.weekday()) + timedelta(weeks=week_offset)
-    monday = monday.replace(hour=0, minute=0, second=0, microsecond=0)
-    sunday = monday + timedelta(days=6, hours=23, minutes=59, seconds=59)
-
-    year, week_num, _ = monday.isocalendar()
-    week_label = f"{year}-W{week_num:02d}"
-
-    # Completed tasks this week
     done_tasks = client.list_tasks(status=TaskStatus.DONE, limit=100)
-    weekly_done = [
+    range_done = [
         t for t in done_tasks
-        if t.created_time and monday <= t.created_time <= sunday
+        if t.last_edited_time and start <= t.last_edited_time <= end
     ]
 
-    # In-progress tasks
     in_progress = client.list_tasks(status=TaskStatus.IN_PROGRESS, limit=50)
 
-    # Notes created this week
     notes = client.list_notes(limit=100)
-    weekly_notes_count = sum(
+    range_notes_count = sum(
         1 for n in notes
-        if n.created_time and monday <= n.created_time <= sunday
+        if n.created_time and start <= n.created_time <= end
     )
 
     summary_lines = [
-        f"📅 {week_label} 工作复盘",
-        f"✅ 完成任务：{len(weekly_done)} 项",
+        f"📅 {start_date} ~ {end_date} 工作复盘",
+        f"✅ 完成任务：{len(range_done)} 项",
         f"🔄 进行中：{len(in_progress)} 项",
-        f"📝 新增笔记：{weekly_notes_count} 篇",
+        f"📝 新增笔记：{range_notes_count} 篇",
     ]
-    if weekly_done:
-        summary_lines.append("\n完成项目：")
-        summary_lines.extend(f"  • [{t.project or '无项目'}] {t.name}" for t in weekly_done)
+    if range_done:
+        projects: dict[str, list[str]] = {}
+        for t in range_done:
+            proj = t.project or "无项目"
+            projects.setdefault(proj, []).append(t.name)
+        summary_lines.append("\n完成详情（按项目分组）：")
+        for proj, names in projects.items():
+            summary_lines.append(f"  [{proj}]")
+            summary_lines.extend(f"    • {n}" for n in names)
 
-    review = WeeklyReview(
-        week_label=week_label,
-        completed_tasks=weekly_done,
+    report = ReviewReport(
+        start_date=start_date,
+        end_date=end_date,
+        completed_tasks=range_done,
         in_progress_tasks=in_progress,
-        notes_created=weekly_notes_count,
+        notes_created=range_notes_count,
         summary="\n".join(summary_lines),
     )
-    return review.model_dump()
+    return report.model_dump()

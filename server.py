@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import fastmcp
 
-from tools.aggregations import generate_standup, generate_weekly_review, get_overview, get_today_tasks
+from tools.aggregations import generate_review, generate_standup, get_overview, get_today_tasks
 from tools.notes import append_note, create_note, get_note, list_notes, search_notes
 from tools.workflow import (
     append_task,
@@ -57,7 +57,7 @@ mcp.tool(search_notes)
 mcp.tool(get_overview)
 mcp.tool(get_today_tasks)
 mcp.tool(generate_standup)
-mcp.tool(generate_weekly_review)
+mcp.tool(generate_review)
 
 
 def main() -> None:
