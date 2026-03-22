@@ -102,6 +102,31 @@ ln -sf $(pwd)/notion-workflow-mcp/.claude/commands/*.md ~/.claude/commands/
 
 After installation, restart Claude CLI. Verify by typing `/capture` — it should be recognized as a slash command.
 
+### 7. Install skills
+
+Skills (like `decompose-task`) are AI-powered workflows in `.claude/skills/`. Unlike slash commands, skills are auto-discovered by Claude Code from the current directory — no manual registration needed.
+
+**Option A: Work inside this project directory**
+
+Skills are automatically available when you run `claude` from `notion-workflow-mcp/`.
+
+**Option B: Make skills globally available**
+
+```bash
+# Copy all skills to global skills directory
+cp -r notion-workflow-mcp/.claude/skills/* ~/.claude/skills/
+```
+
+**Option C: Symlink (auto-sync with updates)**
+
+```bash
+for dir in notion-workflow-mcp/.claude/skills/*/; do
+  ln -sf "$(cd "$dir" && pwd)" ~/.claude/skills/
+done
+```
+
+After installation, restart Claude CLI. Skills will appear in the skill list automatically.
+
 ## Workflow
 
 ```
@@ -162,6 +187,12 @@ After installation, restart Claude CLI. Verify by typing `/capture` — it shoul
 | `/detail <task_id> <子目标名>` | Update subtask detail description |
 | `/done <task_id>` | Mark a task as completed |
 | `/find <keyword>` | Search tasks and notes |
+
+## Skills
+
+| Skill | Description |
+|---|---|
+| `decompose-task` | Extract task + subtasks from conversation context, with confirmation loop before creating to Notion |
 
 ## Database Schema
 
