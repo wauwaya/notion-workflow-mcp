@@ -343,11 +343,114 @@ class NotionClient:
         page = self.client.pages.update(page_id=task_id, properties=props)
         return self._parse_task(page)
 
+    @staticmethod
+    def _parse_md_table(lines: list[str]) -> dict | None:
+        """Parse Markdown table lines into a Notion native table block.
+
+        Returns None if lines don't form a valid table.
+        """
+        # 至少需要 header + separator + 1 data row
+        if len(lines) < 3:
+            return None
+        # 验证 separator 行（第二行）
+        if not re.match(r"^\|[\s\-:|]+\|$", lines[1].strip()):
+            return None
+
+        def split_row(line: str) -> list[str]:
+            line = line.strip()
+            if line.startswith("|"):
+                line = line[1:]
+            if line.endswith("|"):
+                line = line[:-1]
+            return [c.strip() for c in line.split("|")]
+
+        header_cells = split_row(lines[0])
+        col_count = len(header_cells)
+
+        rows = []
+        # header row
+        rows.append({
+            "type": "table_row",
+            "table_row": {
+                "cells": [
+                    [{"type": "text", "text": {"content": c}}] for c in header_cells
+                ]
+            },
+        })
+        # data rows (skip separator at index 1)
+        for line in lines[2:]:
+            cells = split_row(line)
+            # 补齐或截断到与 header 相同列数
+            cells = (cells + [""] * col_count)[:col_count]
+            rows.append({
+                "type": "table_row",
+                "table_row": {
+                    "cells": [
+                        [{"type": "text", "text": {"content": c}}] for c in cells
+                    ]
+                },
+            })
+
+        return {
+            "object": "block",
+            "type": "table",
+            "table": {
+                "table_width": col_count,
+                "has_column_header": True,
+                "has_row_header": False,
+                "children": rows,
+            },
+        }
+
+    def _content_to_blocks(self, content: str) -> list[dict]:
+        """Convert text content to Notion blocks, auto-detecting Markdown tables."""
+        lines = content.split("\n")
+        blocks: list[dict] = []
+        text_buf: list[str] = []
+        table_buf: list[str] = []
+
+        def flush_text():
+            nonlocal text_buf
+            if text_buf:
+                text = "\n".join(text_buf).strip()
+                if text:
+                    blocks.extend(self._split_text_to_paragraphs(text))
+                text_buf = []
+
+        def flush_table():
+            nonlocal table_buf
+            if table_buf:
+                tbl = self._parse_md_table(table_buf)
+                if tbl:
+                    blocks.append(tbl)
+                else:
+                    # 不是有效表格，当普通文本处理
+                    text = "\n".join(table_buf).strip()
+                    if text:
+                        blocks.extend(self._split_text_to_paragraphs(text))
+                table_buf = []
+
+        for line in lines:
+            stripped = line.strip()
+            is_table_line = stripped.startswith("|") and stripped.endswith("|") and "|" in stripped[1:-1]
+            if is_table_line:
+                if not table_buf:
+                    flush_text()
+                table_buf.append(line)
+            else:
+                if table_buf:
+                    flush_table()
+                text_buf.append(line)
+
+        flush_table()
+        flush_text()
+        return blocks if blocks else [self._text_block("")]
+
     def append_task_body(self, task_id: str, content: str) -> None:
-        """Append a paragraph block to a task page body."""
+        """Append blocks to a task page body. Markdown tables are auto-converted to native Notion tables."""
         self.client.blocks.children.append(
             block_id=task_id,
-            children=[self._text_block(content)],
+            children=self._content_to_blocks(content),
         )
 
     def _find_subtask_section(self, blocks: list[dict]) -> tuple[int | None, int | None]:
@@ -709,10 +812,10 @@ class NotionClient:
         return self._parse_note(page)
 
     def append_note_content(self, note_id: str, content: str) -> None:
-        """Append a paragraph block to a note page body."""
+        """Append blocks to a note page body. Markdown tables are auto-converted to native Notion tables."""
         self.client.blocks.children.append(
             block_id=note_id,
-            children=[self._text_block(content)],
+            children=self._content_to_blocks(content),
         )
 
     def search_notes(self, query: str) -> list[Note]:

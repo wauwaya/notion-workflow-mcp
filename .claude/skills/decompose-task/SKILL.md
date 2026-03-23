@@ -1,3 +1,4 @@
+
 ---
 name: decompose-task
 description: Use when a conversation has discussed a requirement, feature, or work item and the user wants to turn it into a structured Notion task with subtasks. Triggers on /decompose or when user says "拆解任务", "创建任务并拆子目标".
@@ -54,7 +55,7 @@ digraph decompose {
 | 截止日期 | 对话中提到的时间线，无则留空 |
 | 子目标 | 3-7 个，含名称 + 优先级，按执行顺序排列 |
 
-子目标粒度：每个预计 0.5-2 小时可完成，具体可执行，非模糊描述。
+子目标粒度：请按功能粒度进行拆解，确保各项子目标具体可执行，杜绝模糊描述。需注意：功能的完整生命周期（含设计、实现、验证等环节）应作为一个整体子目标，无需再将其拆分为更细的子任务。
 
 ### 2. 展示提案
 
