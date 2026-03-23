@@ -803,7 +803,7 @@ class NotionClient:
             note_type=data.type,
             tags=data.tags,
         )
-        children = [self._text_block(data.content)] if data.content else []
+        children = self._content_to_blocks(data.content) if data.content else []
         page = self.client.pages.create(
             parent={"data_source_id": self.notes_db_id},
             properties=props,
