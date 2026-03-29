@@ -599,13 +599,25 @@ class NotionClient:
         if start is None:
             raise ValueError("任务页面中未找到 ## 子目标 section")
 
-        # P1: 校验 subtask_name 是否存在于表格中
-        existing_subtasks = self.get_subtasks(task_id)
-        if not any(st.name == subtask_name for st in existing_subtasks):
-            names = [st.name for st in existing_subtasks]
-            raise ValueError(f"子目标「{subtask_name}」不存在。现有子目标: {names}")
-
+        # P1: 校验 subtask_name 是否存在于表格中 (从已有 blocks 中提取，避免重复 API 调用)
         section = blocks[start + 1 : end]
+        table_block = None
+        for block in section:
+            if block.get("type") == "table":
+                table_block = block
+                break
+        if table_block is not None:
+            table_rows = self._get_all_child_blocks(table_block["id"])
+            names = []
+            for row in table_rows[1:]:
+                cells = row.get("table_row", {}).get("cells", [])
+                if cells:
+                    names.append("".join(t.get("plain_text", "") for t in cells[0]))
+            if subtask_name not in names:
+                raise ValueError(f"子目标「{subtask_name}」不存在。现有子目标: {names}")
+        else:
+            raise ValueError("子目标 section 中未找到表格")
+
         section_end_idx = end if end is not None else len(blocks)
 
         # Find existing heading_3 matching subtask_name
@@ -637,31 +649,104 @@ class NotionClient:
         new_blocks.extend(self._split_text_to_paragraphs(detail))
 
         if heading_idx is not None:
-            # Delete old heading_3 + its paragraphs
+            # Insert-before-delete: insert new blocks first, then delete old ones
+            # This avoids data loss if insert succeeds but delete fails (worst case: temporary duplication)
             old_heading_block = section[heading_idx]
-            # Find the block BEFORE the heading for insertion anchor
             abs_heading_idx = (start + 1) + heading_idx
-            after_block_id = blocks[abs_heading_idx - 1]["id"] if abs_heading_idx > 0 else None
+            # abs_heading_idx is always >= 1 (start >= 0, heading_idx >= 0, plus 1)
+            after_block_id = blocks[abs_heading_idx - 1]["id"]
 
+            # Step 1: Insert new blocks at the same position
+            self.client.blocks.children.append(
+                block_id=task_id, children=new_blocks, after=after_block_id
+            )
+
+            # Step 2: Delete old heading_3 + its paragraphs (safe: new content already persisted)
             self.client.blocks.delete(block_id=old_heading_block["id"])
             for pid in paragraph_block_ids:
                 self.client.blocks.delete(block_id=pid)
-
-            # Insert new blocks at the same position
-            if after_block_id:
-                self.client.blocks.children.append(
-                    block_id=task_id, children=new_blocks, after=after_block_id
-                )
-            else:
-                self.client.blocks.children.append(
-                    block_id=task_id, children=new_blocks
-                )
         else:
             # Append at end of section
             last_section_block_id = blocks[section_end_idx - 1]["id"]
             self.client.blocks.children.append(
                 block_id=task_id, children=new_blocks, after=last_section_block_id
             )
+
+    def update_subtask_status(self, task_id: str, subtask_name: str, status: SubtaskStatus) -> list[Subtask]:
+        """Atomically update a single subtask's status by patching the table row in-place.
+
+        Only touches the matching table_row block; detail sections are untouched.
+        """
+        blocks = self._get_all_child_blocks(task_id)
+        start, end = self._find_subtask_section(blocks)
+        if start is None:
+            raise ValueError("任务页面中未找到 ## 子目标 section")
+
+        section = blocks[start + 1 : end]
+        table_block = None
+        for block in section:
+            if block.get("type") == "table":
+                table_block = block
+                break
+        if table_block is None:
+            raise ValueError("子目标 section 中未找到表格")
+
+        rows = self._get_all_child_blocks(table_block["id"])
+        target_row = None
+        for row in rows[1:]:  # skip header
+            cells = row.get("table_row", {}).get("cells", [])
+            if len(cells) < 3:
+                continue
+            name = "".join(t.get("plain_text", "") for t in cells[0])
+            if name == subtask_name:
+                target_row = row
+                break
+
+        if target_row is None:
+            names = []
+            for row in rows[1:]:
+                cells = row.get("table_row", {}).get("cells", [])
+                if cells:
+                    names.append("".join(t.get("plain_text", "") for t in cells[0]))
+            raise ValueError(f"子目标「{subtask_name}」不存在。现有子目标: {names}")
+
+        # Normalize cells to avoid sending read-only fields back, then patch status
+        def _norm_cell(cell: list[dict]) -> list[dict]:
+            return [{"type": "text", "text": {"content": t.get("plain_text", "")}} for t in cell]
+
+        cells = target_row["table_row"]["cells"]
+        normalized = [
+            _norm_cell(cells[0]),
+            _norm_cell(cells[1]),
+            [{"type": "text", "text": {"content": SUBTASK_STATUS_DISPLAY[status]}}],
+        ]
+        try:
+            self.client.blocks.update(
+                block_id=target_row["id"],
+                table_row={"cells": normalized},
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"更新子目标「{subtask_name}」状态失败 (block_id={target_row['id']}): {e}"
+            ) from e
+
+        # Build return value from already-fetched data (avoid redundant API calls)
+        subtasks: list[Subtask] = []
+        for row in rows[1:]:
+            cells = row.get("table_row", {}).get("cells", [])
+            if len(cells) < 3:
+                continue
+            rname = "".join(t.get("plain_text", "") for t in cells[0])
+            priority_str = "".join(t.get("plain_text", "") for t in cells[1])
+            # Use the new status for the updated row, original display text for others
+            if rname == subtask_name:
+                rstatus = status
+            else:
+                status_str = "".join(t.get("plain_text", "") for t in cells[2])
+                rstatus = SUBTASK_DISPLAY_TO_STATUS.get(status_str, SubtaskStatus.TODO)
+            rpriority = TaskPriority(priority_str) if priority_str else TaskPriority.NORMAL
+            subtasks.append(Subtask(name=rname, status=rstatus, priority=rpriority))
+        return subtasks
 
     def _get_all_child_blocks(self, block_id: str) -> list[dict]:
         """Retrieve all child blocks of a page/block, handling pagination."""

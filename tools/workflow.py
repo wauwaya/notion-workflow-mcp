@@ -121,6 +121,7 @@ def update_task(
     tags: Optional[list[str]] = None,
     note: Optional[str] = None,
     project: Optional[str] = None,
+    summary: Optional[str] = None,
 ) -> dict:
     """
     更新一个已有任务的属性（只传需要修改的字段）。
@@ -133,10 +134,12 @@ def update_task(
         tags:     新标签列表（会完整替换原有标签）
         note:     新备注（会替换原有备注）
         project:  所属项目名称
+        summary:  完成总结，仅在 status=完成 时有效，会追加到页面 body
 
     Returns:
         更新后的任务详情
     """
+    client = get_client()
     data = TaskUpdate(
         status=TaskStatus(status) if status else None,
         priority=TaskPriority(priority) if priority else None,
@@ -145,64 +148,21 @@ def update_task(
         note=note,
         project=project,
     )
-    return get_client().update_task(task_id, data).model_dump()
+    updated = client.update_task(task_id, data)
 
-
-# ---------------------------------------------------------------------------
-# start_task
-# ---------------------------------------------------------------------------
-
-def start_task(task_id: str) -> dict:
-    """
-    将任务从"待办"推进到"进行中"，并在页面 body 中记录开始时间。
-
-    Args:
-        task_id: 要开始的任务 ID
-
-    Returns:
-        更新后的任务详情
-    """
-    client = get_client()
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    # Update status
-    updated = client.update_task(
-        task_id,
-        TaskUpdate(status=TaskStatus.IN_PROGRESS),
-    )
-
-    # Append timestamp to page body
-    client.append_task_body(task_id, f"▶ 开始时间：{now}")
+    # 状态变更时自动记录时间戳
+    if data.status:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        if data.status == TaskStatus.IN_PROGRESS:
+            client.append_task_body(task_id, f"▶ 开始时间：{now}")
+        elif data.status == TaskStatus.DONE:
+            log = f"✅ 完成时间：{now}"
+            if summary:
+                log += f"\n总结：{summary}"
+            client.append_task_body(task_id, log)
 
     return updated.model_dump()
 
-
-# ---------------------------------------------------------------------------
-# complete_task
-# ---------------------------------------------------------------------------
-
-def complete_task(task_id: str, summary: Optional[str] = None) -> dict:
-    """
-    将任务标记为"完成"，并在页面 body 中记录完成时间和可选总结。
-
-    Args:
-        task_id: 要完成的任务 ID
-        summary: 可选的完成总结/备注，会追加到页面 body
-
-    Returns:
-        更新后的任务详情
-    """
-    client = get_client()
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    updated = client.update_task(task_id, TaskUpdate(status=TaskStatus.DONE))
-
-    log = f"✅ 完成时间：{now}"
-    if summary:
-        log += f"\n总结：{summary}"
-    client.append_task_body(task_id, log)
-
-    return updated.model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -309,3 +269,24 @@ def update_subtask_detail(task_id: str, subtask_name: str, detail: str) -> dict:
     """
     get_client().update_subtask_detail(task_id, subtask_name, detail)
     return {"status": "ok", "subtask_name": subtask_name, "detail_length": len(detail)}
+
+
+# ---------------------------------------------------------------------------
+# update_subtask_status
+# ---------------------------------------------------------------------------
+
+def update_subtask_status(task_id: str, subtask_name: str, status: str) -> list[dict]:
+    """
+    原子更新单个子目标的状态（只修改表格对应行，不触碰其他子目标和 detail 区块）。
+
+    Args:
+        task_id:      任务的 Notion 页面 ID
+        subtask_name: 子目标名称（精确匹配）
+        status:       目标状态，可选值：todo | doing | done
+
+    Returns:
+        更新后的完整子目标列表
+    """
+    parsed_status = SubtaskStatus(status)
+    result = get_client().update_subtask_status(task_id, subtask_name, parsed_status)
+    return [s.model_dump() for s in result]

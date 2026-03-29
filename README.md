@@ -2,15 +2,14 @@
 
 Personal workflow management via **Claude CLI + Notion API**, built as an MCP Server.
 
-Inspired by [google-keep-mcp](https://github.com/staryxchen/google-keep-mcp) — turns Notion into a personal task and knowledge system driven by slash commands.
-
 ## Features
 
-- **20 MCP tools** covering task lifecycle, note-taking, subtask management, and aggregations
-- **2 independent Notion databases**: 工作流库 (tasks, with project & subtasks) + 笔记库 (notes)
-- **12 slash commands**: `/capture`, `/subtask`, `/task_list`, `/status`, `/progress`, `/note`, `/review`, `/standup`, `/overview`, `/detail`, `/done`, `/find`
-- **Project-based task management**: tasks belong to projects, with embedded subtasks (priority + status)
-- **Conversation-to-note**: `/note` auto-summarizes AI conversations into structured notes
+- **19 MCP tools** — task lifecycle, subtask management, note-taking, aggregations
+- **12 skills** — slash commands + natural language triggers, globally installable
+- **2 Notion databases** — 工作流库 (tasks) + 笔记库 (notes), independent
+- **Project-based task management** — tasks belong to projects, with embedded subtasks (priority + status)
+- **Conversation-to-note** — `/note` auto-summarizes AI conversations into structured notes
+- **Ebbinghaus review** — `/recall` schedules spaced repetition based on note creation dates
 
 ## Requirements
 
@@ -23,7 +22,7 @@ Inspired by [google-keep-mcp](https://github.com/staryxchen/google-keep-mcp) —
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/<your-username>/notion-workflow-mcp
+git clone <repo-url>
 cd notion-workflow-mcp
 uv venv --python python3.12
 uv pip install -e .
@@ -33,16 +32,15 @@ uv pip install -e .
 
 ```bash
 cp .env.example .env
-# Fill in your NOTION_TOKEN, WORKFLOW_DATABASE_ID, NOTES_DATABASE_ID
+# Fill in: NOTION_TOKEN, WORKFLOW_DATABASE_ID, NOTES_DATABASE_ID
 ```
 
-**Getting your IDs:**
 - `NOTION_TOKEN`: [notion.so/my-integrations](https://www.notion.so/my-integrations) → New integration → copy token
-- Database IDs: Use the init script to auto-discover them (see step 4)
+- Database IDs: Open database in Notion → URL 中 `notion.so/<database_id>?v=...`
 
-### 3. Share databases with your Integration
+### 3. Share databases with Integration
 
-In Notion: open each database → `...` → `Connections` → select your integration
+In Notion: open each database → `...` → `Connections` → select your integration.
 
 ### 4. Initialize database schema
 
@@ -50,15 +48,15 @@ In Notion: open each database → `...` → `Connections` → select your integr
 python scripts/init_databases.py
 ```
 
-This auto-adds all required properties (状态, 优先级, 项目, 截止日期, 标签, 备注) to your existing databases.
+Auto-adds required properties (状态, 优先级, 项目, 截止日期, 标签, 备注) to existing databases.
 
-### 5. Register MCP Server with Claude CLI
+### 5. Register MCP Server
 
 ```bash
 claude mcp add notion-workflow -- /path/to/.venv/bin/python /path/to/server.py
 ```
 
-Or add manually to `~/.claude/settings.json`:
+Or add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -71,147 +69,108 @@ Or add manually to `~/.claude/settings.json`:
 }
 ```
 
-Restart Claude CLI — the MCP server loads automatically.
+### 6. Install skills
 
-### 6. Install slash command skills
-
-Slash commands (like `/capture`, `/note`, `/review`) are Claude Code skills defined in `.claude/commands/`. They need to be accessible from your working directory.
-
-**Option A: Work inside this project directory**
-
-If you run `claude` from the `notion-workflow-mcp/` directory, skills are automatically available — Claude Code reads `.claude/commands/` from the current directory.
-
-**Option B: Make skills globally available**
-
-To use the slash commands from **any directory**, copy them to your global Claude Code commands folder:
+Skills defined in `.claude/skills/` provide slash commands and natural language triggers. In-repo they're auto-discovered; to use from **any directory**, run:
 
 ```bash
-# Create global commands dir if it doesn't exist
-mkdir -p ~/.claude/commands
-
-# Copy all skills
-cp notion-workflow-mcp/.claude/commands/*.md ~/.claude/commands/
+bash scripts/install-skills.sh
 ```
 
-**Option C: Symlink (auto-sync with updates)**
-
-```bash
-mkdir -p ~/.claude/commands
-ln -sf $(pwd)/notion-workflow-mcp/.claude/commands/*.md ~/.claude/commands/
-```
-
-After installation, restart Claude CLI. Verify by typing `/capture` — it should be recognized as a slash command.
-
-### 7. Install skills
-
-Skills (like `decompose-task`) are AI-powered workflows in `.claude/skills/`. Unlike slash commands, skills are auto-discovered by Claude Code from the current directory — no manual registration needed.
-
-**Option A: Work inside this project directory**
-
-Skills are automatically available when you run `claude` from `notion-workflow-mcp/`.
-
-**Option B: Make skills globally available**
-
-```bash
-# Copy all skills to global skills directory
-cp -r notion-workflow-mcp/.claude/skills/* ~/.claude/skills/
-```
-
-**Option C: Symlink (auto-sync with updates)**
-
-```bash
-for dir in notion-workflow-mcp/.claude/skills/*/; do
-  ln -sf "$(cd "$dir" && pwd)" ~/.claude/skills/
-done
-```
-
-After installation, restart Claude CLI. Skills will appear in the skill list automatically.
+This copies all skills to `~/.claude-internal/skills/`. Restart Claude Code session to take effect.
 
 ## Workflow
 
 ```
-# 1. Create a task under a project
+# Create a task
 /capture 重构Notion MCP -p MCP改造 -d 2026-03-28
 
-# 2. Add subtasks
+# Add subtasks
 /subtask abc123 去掉关联功能 -pri 高
-/subtask abc123 增加项目字段 -pri 紧急
-/subtask abc123 创建skill
+/subtask abc123 增加项目字段
 
-# 3. View all incomplete tasks
+# View tasks
 /task_list
 
-# 4. Start working on a subtask
+# Start working
 /status abc123 doing 去掉关联功能
 
-# 5. Ask AI a question, then save the answer as a note
-> Go 的 context 包怎么用？
-> [AI explains...]
+# Save conversation knowledge
 /note
 
-# 6. Mark subtask done
+# Mark done
 /status abc123 done 去掉关联功能
 
-# 7. Update progress
+# Update progress
 /progress abc123
 
-# 8. End of day review
-/review today
+# Daily standup
+/standup
 
-# 9. Friday weekly report
+# Weekly review
 /review this week
+
+# Ebbinghaus review
+/recall
 ```
+
+## Skills
+
+| Skill | Trigger | Description |
+|---|---|---|
+| `capture` | `/capture`, "创建任务" | Quick-create a task |
+| `subtask-add` | `/subtask`, "添加子目标" | Add subtask to a task |
+| `task-list` | `/task_list`, "任务列表" | View incomplete tasks by project |
+| `status` | `/status`, "标记完成" | Change task/subtask status (atomic) |
+| `detail` | `/detail`, "写进展" | Update subtask detail |
+| `progress` | `/progress`, "汇总进展" | Summarize & save progress |
+| `note` | `/note`, "记笔记" | Summarize conversation to note |
+| `find` | `/find`, "搜索" | Search tasks and notes |
+| `standup` | `/standup`, "站会" | Daily standup report |
+| `review` | `/review`, "复盘" | Date-range review report |
+| `recall` | `/recall`, "复习" | Ebbinghaus spaced repetition |
+| `decompose-task` | `/decompose`, "拆解任务" | Extract task + subtasks from conversation |
 
 ## MCP Tools
 
 | Group | Tools |
 |---|---|
-| Workflow | `list_tasks` `get_task` `create_task` `update_task` `start_task` `complete_task` `append_task` `search_tasks` |
-| Subtasks | `get_subtasks` `update_subtasks` `update_subtask_detail` |
+| Workflow | `list_tasks` `get_task` `create_task` `update_task` `append_task` `search_tasks` |
+| Subtasks | `get_subtasks` `update_subtasks` `update_subtask_detail` `update_subtask_status` |
 | Notes | `list_notes` `get_note` `create_note` `append_note` `search_notes` |
 | Aggregations | `get_overview` `get_today_tasks` `generate_standup` `generate_review` |
-
-## Slash Commands
-
-| Command | Description |
-|---|---|
-| `/capture <task> [-p project] [-pri priority] [-d date]` | Quick-create a task |
-| `/subtask <task_id> <name> [-pri priority]` | Add a subtask to a task |
-| `/task_list [-p project] [-s status]` | View incomplete tasks grouped by project |
-| `/status <task_id> <状态> [子目标名]` | Change task or subtask status |
-| `/progress <task_id>` | Summarize & save progress to Notion |
-| `/note` | Summarize current conversation into a note |
-| `/review [时间范围]` | Review report (today/yesterday/this week/last week/date range) |
-| `/standup` | Daily standup (yesterday done / today plan / blockers) |
-| `/overview` | Task status dashboard |
-| `/detail <task_id> <子目标名>` | Update subtask detail description |
-| `/done <task_id>` | Mark a task as completed |
-| `/find <keyword>` | Search tasks and notes |
-
-## Skills
-
-| Skill | Description |
-|---|---|
-| `decompose-task` | Extract task + subtasks from conversation context, with confirmation loop before creating to Notion |
 
 ## Database Schema
 
 **工作流库 (Tasks)**
 `名称` · `状态` · `优先级` · `项目` · `截止日期` · `标签` · `备注`
 
-Subtasks are embedded in the task page body as structured Markdown:
-```markdown
-## 子目标
-- [ ] 待办子目标 (🟢 普通)
-- [~] 进行中子目标 (🟡 高)
-- [x] 已完成子目标 (🔴 紧急)
-```
+Subtasks are embedded in task page body as a table:
+
+| 子目标 | 优先级 | 状态 |
+|--------|--------|------|
+| 功能A | 🟡 高 | ⬜ 待办 |
+| 功能B | 🟢 普通 | 🔄 进行中 |
+| 功能C | 🔴 紧急 | ✅ 完成 |
+
+Each subtask can have a detail section (heading_3 + paragraphs) below the table.
 
 **笔记库 (Notes)**
-`名称` · `类型` · `标签`
+`名称` · `类型` (会议记录/想法/参考/速记) · `标签`
 
-## Notes
+## Project Structure
 
-- Built against **notion-client 3.0** (`data_sources.*` API)
-- Two databases are **independent** — no bidirectional relation between tasks and notes
-- Subtasks use three states: `[ ]` todo, `[~]` doing, `[x]` done
+```
+├── server.py              # FastMCP server entry
+├── notion/
+│   ├── client.py          # Notion API client
+│   └── models.py          # Pydantic models & enums
+├── tools/
+│   ├── workflow.py        # Task management tools
+│   ├── notes.py           # Note tools
+│   └── aggregations.py    # Standup, review, overview
+├── .claude/skills/        # 12 skills (source of truth)
+└── scripts/
+    ├── init_databases.py  # Database schema setup
+    └── install-skills.sh  # Install skills globally
+```

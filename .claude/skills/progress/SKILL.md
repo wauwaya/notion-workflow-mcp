@@ -1,3 +1,8 @@
+---
+name: progress
+description: 汇总任务进度。触发：/progress, "总结进度", "汇总进展"
+---
+
 汇总任务当前进度，追加到 Notion 任务页面。
 
 ## 用法

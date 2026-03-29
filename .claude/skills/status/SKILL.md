@@ -1,3 +1,8 @@
+---
+name: status
+description: 切换任务或子目标状态。触发：/status, "改状态", "标记完成", "开始做"
+---
+
 切换任务状态或子目标状态。
 
 ## 用法
@@ -41,18 +46,17 @@
    - 0 个匹配 → 报错，列出所有子目标名称供选择
    - 多个匹配 → 列出匹配项，请用户输入更精确名称
    - 1 个匹配 → 继续
-4. 更新匹配到的子目标状态
-5. 调用 MCP `update_subtasks(task_id, updated_list)` 写回
-6. 如果目标状态是 doing：
+4. 调用 MCP `update_subtask_status(task_id, subtask_name, status)` 原子更新
+5. 如果目标状态是 doing：
    - 调用 MCP `get_task(task_id)` 检查任务状态
-   - 仅当任务状态为"待办"时，才调用 MCP `start_task(task_id)`
-7. 输出：
+   - 仅当任务状态为"待办"时，才调用 MCP `update_task(task_id, status=进行中)`
+6. 输出：
 
 ✅「{子目标名}」→ {🔄 进行中/✅ 完成}
 任务「{任务名}」进度: {done_count}/{total} 完成
 
-8. 如果所有子目标都 done，提示：
+7. 如果所有子目标都 done，提示：
 
 🎉 所有子目标已完成！是否将任务「{任务名}」标记为完成？
 
-如果用户确认，调用 MCP `complete_task(task_id)`。
+如果用户确认，调用 MCP `update_task(task_id, status=完成)`。

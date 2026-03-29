@@ -12,14 +12,13 @@ from tools.aggregations import generate_review, generate_standup, get_overview, 
 from tools.notes import append_note, create_note, get_note, list_notes, search_notes
 from tools.workflow import (
     append_task,
-    complete_task,
     create_task,
     get_subtasks,
     get_task,
     list_tasks,
     search_tasks,
-    start_task,
     update_subtask_detail,
+    update_subtask_status,
     update_subtasks,
     update_task,
 )
@@ -38,13 +37,12 @@ mcp.tool(list_tasks)
 mcp.tool(get_task)
 mcp.tool(create_task)
 mcp.tool(update_task)
-mcp.tool(start_task)
-mcp.tool(complete_task)
 mcp.tool(append_task)
 mcp.tool(search_tasks)
 mcp.tool(get_subtasks)
 mcp.tool(update_subtasks)
 mcp.tool(update_subtask_detail)
+mcp.tool(update_subtask_status)
 
 # Notes tools
 mcp.tool(list_notes)

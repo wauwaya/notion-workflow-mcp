@@ -1,3 +1,8 @@
+---
+name: subtask-add
+description: 给任务添加子目标。触发：/subtask, "加个子目标", "添加子目标"
+---
+
 给任务添加一个子目标。
 
 ## 用法
